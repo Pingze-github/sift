@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package main
+package sift
 
 import (
 	"bufio"
@@ -759,11 +759,11 @@ func ExecuteSiftCmd (cmd string) SearchResult {
 	}
 }
 
-func main () {
-	searchResult := ExecuteSiftCmd("-e sift . -n")
-	for _, result := range(searchResult.results) {
-		fmt.Println("这是一个文件的搜索结果：")
-		printResult(result)
-	}
-	fmt.Println("运算耗时", searchResult.timeCost)
-}
+//func main () {
+//	searchResult := ExecuteSiftCmd("-e sift . -n")
+//	for _, result := range(searchResult.results) {
+//		fmt.Println("这是一个文件的搜索结果：")
+//		printResult(result)
+//	}
+//	fmt.Println("运算耗时", searchResult.timeCost)
+//}
