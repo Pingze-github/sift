@@ -160,11 +160,11 @@ var global = struct {
 
 // 返回数据
 type SearchResult struct {
-	results 	[]*Result
-	matchCount	int64
-	resultCount	int64
-	targetCount	int64
-	timeCost	time.Duration
+	Results 	[]*Result
+	MatchCount	int64
+	ResultCount	int64
+	TargetCount	int64
+	TimeCost	time.Duration
 }
 
 // processDirectories reads global.directoryChan and processes
@@ -759,15 +759,17 @@ func ExecuteSiftCmd (cmd string) SearchResult {
 	}
 }
 
+// 打印result
 func PrintResult(result *Result) {
 	printResult(result)
 }
 
+// 测试方法
 func Test () {
 	searchResult := ExecuteSiftCmd("-e sift . -n")
-	for _, result := range(searchResult.results) {
+	for _, result := range(searchResult.Results) {
 		fmt.Println("这是一个文件的搜索结果：")
 		printResult(result)
 	}
-	fmt.Println("运算耗时", searchResult.timeCost)
+	fmt.Println("运算耗时", searchResult.TimeCost)
 }
