@@ -759,6 +759,10 @@ func ExecuteSiftCmd (cmd string) SearchResult {
 	}
 }
 
+func PrintResult(result *Result) {
+	printResult(result)
+}
+
 func Test () {
 	searchResult := ExecuteSiftCmd("-e sift . -n")
 	for _, result := range(searchResult.results) {
