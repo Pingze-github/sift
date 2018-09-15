@@ -137,6 +137,7 @@ var global = struct {
 	matchRegexes          []*regexp.Regexp
 	gitignoreCache        *gitignore.GitIgnoreCache
 	resultsChan           chan *Result
+	results				  [] *Result
 	resultsDoneChan       chan struct{}
 	targetsWaitGroup      sync.WaitGroup
 	recurseWaitGroup      sync.WaitGroup
@@ -150,10 +151,20 @@ var global = struct {
 	totalMatchCount       int64
 	totalResultCount      int64
 	totalTargetCount      int64
+	timeCost			  time.Duration
 }{
 	outputFile:         os.Stdout,
 	netTcpRegex:        regexp.MustCompile(`^(tcp[46]?)://(.*:\d+)$`),
 	streamingThreshold: 1 << 16,
+}
+
+// 返回数据
+type SearchResult struct {
+	results 	[]*Result
+	matchCount	int64
+	resultCount	int64
+	targetCount	int64
+	timeCost	time.Duration
 }
 
 // processDirectories reads global.directoryChan and processes
@@ -387,8 +398,12 @@ func checkShebang(regex *regexp.Regexp, filepath string) (bool, error) {
 }
 
 // processFileTargets reads filesChan, builds an io.Reader for the target and calls processReader
+// 关键 文件搜索
 func processFileTargets() {
+
+	// 控制等待组完成
 	defer global.targetsWaitGroup.Done()
+
 	dataBuffer := make([]byte, InputBlockSize)
 	testBuffer := make([]byte, InputBlockSize)
 	matchRegexes := make([]*regexp.Regexp, len(global.matchPatterns))
@@ -396,6 +411,7 @@ func processFileTargets() {
 		matchRegexes[i] = regexp.MustCompile(global.matchPatterns[i])
 	}
 
+	// 从filesChan中取出filepath
 	for filepath := range global.filesChan {
 		var err error
 		var infile *os.File
@@ -406,9 +422,11 @@ func processFileTargets() {
 			continue
 		}
 
+		// 读取文件为infile
 		if filepath == "-" {
 			infile = os.Stdin
 		} else {
+
 			infile, err = os.Open(filepath)
 			if err != nil {
 				errorLogger.Printf("cannot open file '%s': %s\n", filepath, err)
@@ -428,12 +446,20 @@ func processFileTargets() {
 			reader = nbreader.NewNBReader(infile, InputBlockSize,
 				nbreader.ChunkTimeout(MultilinePipeChunkTimeout), nbreader.Timeout(MultilinePipeTimeout))
 		} else {
+			// 正常进入这个分支
 			reader = infile
 		}
 
 		if options.InvertMatch {
 			err = processReaderInvertMatch(reader, matchRegexes, filepath)
 		} else {
+			// 正常进入这个分支
+			// reader 文件reader io.Reader
+			// matchRegexes 正则s
+			// dataBuffer 结果buffer
+			// testBuffer 结果buffer
+			// testBuffer 结果buffer
+			// filepath 文件路径
 			err = processReader(reader, matchRegexes, dataBuffer, testBuffer, filepath)
 		}
 		if err != nil {
@@ -490,6 +516,22 @@ func processNetworkTarget(target string) {
 	}
 }
 
+// 结果收集
+func resultCollector() {
+	for result := range global.resultsChan {
+		if options.TargetsOnly {
+			continue
+		}
+		global.totalTargetCount++
+		result.applyConditions()
+		if len(result.matches) > 0 {
+			global.results = append(global.results, result)
+		}
+	}
+	global.resultsDoneChan <- struct{}{}
+}
+
+// 执行搜索
 func executeSearch(targets []string) (ret int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -508,13 +550,17 @@ func executeSearch(targets []string) (ret int, err error) {
 	global.totalMatchCount = 0
 	global.totalResultCount = 0
 
-	go resultHandler()
+	// 关键：结果处理
+	// go resultHandler()
+	go resultCollector()
 
 	for i := 0; i < options.Cores; i++ {
 		global.targetsWaitGroup.Add(1)
+		// 关键：文件目标处理
 		go processFileTargets()
 	}
 
+	// 关键：目录目标处理
 	go processDirectories()
 
 	for _, target := range targets {
@@ -525,6 +571,7 @@ func executeSearch(targets []string) (ret int, err error) {
 			global.targetsWaitGroup.Add(1)
 			go processNetworkTarget(target)
 		default:
+			// 进入这里
 			fileinfo, err := os.Stat(target)
 			if err != nil {
 				if os.IsNotExist(err) {
@@ -534,9 +581,13 @@ func executeSearch(targets []string) (ret int, err error) {
 				}
 			}
 			if fileinfo.IsDir() {
+				// 目录搜索
 				global.recurseWaitGroup.Add(1)
 				global.directoryChan <- target
 			} else {
+				// 文件搜索
+				// 将目标文件送入 filesChan
+
 				global.filesChan <- target
 			}
 		}
@@ -548,6 +599,7 @@ func executeSearch(targets []string) (ret int, err error) {
 	close(global.filesChan)
 	global.targetsWaitGroup.Wait()
 
+	// 阻塞直到resultsChan关闭，所有结果收集完成
 	close(global.resultsChan)
 	<-global.resultsDoneChan
 
@@ -562,22 +614,23 @@ func executeSearch(targets []string) (ret int, err error) {
 		errorLogger.Printf("%d files skipped due to very long lines (>= %d bytes). See options --blocksize, --err-show-line-length and --err-skip-line-length.", global.totalLineLengthErrors, InputBlockSize)
 	}
 
-	if options.Stats {
-		tend := time.Now()
-		fmt.Fprintln(os.Stderr, global.totalTargetCount, "files processed")
-		fmt.Fprintln(os.Stderr, global.totalResultCount, "files match")
-		fmt.Fprintln(os.Stderr, global.totalMatchCount, "matches found")
-		fmt.Fprintf(os.Stderr, "in %v\n", tend.Sub(tstart))
-	}
+	// 统计运算时间
+	tend := time.Now()
+	global.timeCost = tend.Sub(tstart)
 
 	return retVal, nil
 }
 
-func main() {
+
+// 执行sift命令。可以传入sift执行命令（参数部分），来执行操作并返回结果
+func ExecuteSiftCmd (cmd string) SearchResult {
 	var targets []string
 	var args []string
 	var err error
 
+	cmdArgs := strings.Split(cmd, " ")
+
+	// 通过parser解析直接将配置传递到Options
 	parser := flags.NewNamedParser("sift", flags.HelpFlag|flags.PassDoubleDash)
 	parser.AddGroup("Options", "Options", &options)
 	parser.Name = "sift"
@@ -588,7 +641,8 @@ func main() {
 	// temporarily parse options to see if the --no-conf/--conf options were used and
 	// then discard the result
 	options.LoadDefaults()
-	args, err = parser.Parse()
+	args, err = parser.ParseArgs(cmdArgs)
+
 	if err != nil {
 		if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
 			fmt.Println(e.Error())
@@ -603,18 +657,25 @@ func main() {
 	options = Options{}
 
 	// perform full option parsing respecting the --no-conf/--conf options
+
+	// 两行做了初始化配置
 	options.LoadDefaults()
 	options.LoadConfigs(noConf, configFile)
-	args, err = parser.Parse()
+
+	// 解析出args=[.]
+	// 这个过程使options被输入参数所配置
+	args, err = parser.ParseArgs(cmdArgs)
 	if err != nil {
 		errorLogger.Println(err)
 		os.Exit(2)
 	}
 
+	// 整理patterns
 	for _, pattern := range options.Patterns {
 		global.matchPatterns = append(global.matchPatterns, pattern)
 	}
 
+	// 未进入
 	if options.PatternFile != "" {
 		f, err := os.Open(options.PatternFile)
 		if err != nil {
@@ -670,6 +731,7 @@ func main() {
 		targets = targetsExpanded
 	}
 
+	// options 使用用户配置
 	if err := options.Apply(global.matchPatterns, targets); err != nil {
 		errorLogger.Fatalf("cannot process options: %s\n", err)
 	}
@@ -682,9 +744,26 @@ func main() {
 		}
 	}
 
-	retVal, err := executeSearch(targets)
+	_, err = executeSearch(targets)
+
 	if err != nil {
 		errorLogger.Println(err)
 	}
-	os.Exit(retVal)
+
+	return SearchResult{
+		global.results,
+		global.totalMatchCount,
+		global.totalResultCount,
+		global.totalMatchCount,
+		global.timeCost,
+	}
+}
+
+func main () {
+	searchResult := ExecuteSiftCmd("-e sift . -n")
+	for _, result := range(searchResult.results) {
+		fmt.Println("这是一个文件的搜索结果：")
+		printResult(result)
+	}
+	fmt.Println("运算耗时", searchResult.timeCost)
 }

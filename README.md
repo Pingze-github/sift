@@ -2,6 +2,11 @@
 
 A fast and powerful open source alternative to grep.
 
+## 说明
+
+这是对sift工具的一个修改，使之可以作为类库被其他程序调用。
+
+通过输入sift命令参数，可以返回搜索结果。
 
 ## Features
 

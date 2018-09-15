@@ -83,6 +83,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 			}
 		} else {
 			// single line mode
+			// 将文件内容读入dataBuffer
 			length, err = reader.Read(data[bufferOffset:])
 			if err != nil {
 				if err == io.EOF {
@@ -147,6 +148,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 			testDataPtr = data[0:length]
 		}
 
+		// 正则匹配。完成后存入newMatches
 		var newMatches Matches
 		for _, re := range matchRegexes {
 			tmpMatches := getMatches(re, data, testDataPtr, offset, length, validMatchRange, 0, target)
@@ -197,6 +199,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 
 		if len(newMatches) > 0 {
 			// if a list option is used exit here if possible
+			// 平时不执行
 			if (options.FilesWithMatches || options.FilesWithoutMatch) && !options.Count && len(global.conditions) == 0 {
 				global.resultsChan <- &Result{target: target, matches: []Match{Match{}}}
 				return nil
@@ -210,6 +213,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 				if len(matches) > global.streamingThreshold && global.streamingAllowed {
 					resultStreaming = true
 					matchChan = make(chan Matches, 16)
+					// target为文件时执行
 					global.resultsChan <- &Result{target: target, matches: matches, streaming: true, matchChan: matchChan, isBinary: resultIsBinary}
 					defer func() {
 						close(matchChan)
@@ -232,6 +236,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 		offset += int64(validMatchRange)
 	}
 
+	// target为目录时，执行
 	if !resultStreaming {
 		global.resultsChan <- &Result{target: target, matches: matches, conditionMatches: conditionMatches, streaming: false, isBinary: resultIsBinary}
 	}
