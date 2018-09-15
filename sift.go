@@ -623,7 +623,7 @@ func executeSearch(targets []string) (ret int, err error) {
 
 
 // 执行sift命令。可以传入sift执行命令（参数部分），来执行操作并返回结果
-func ExecuteSiftCmd (cmd string) SearchResult {
+func ExecuteSiftCmd (cmd string) (SearchResult, error) {
 	var targets []string
 	var args []string
 	var err error
@@ -644,13 +644,14 @@ func ExecuteSiftCmd (cmd string) SearchResult {
 	args, err = parser.ParseArgs(cmdArgs)
 
 	if err != nil {
-		if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
-			fmt.Println(e.Error())
-			os.Exit(0)
-		} else {
-			errorLogger.Println(err)
-			os.Exit(2)
-		}
+		return SearchResult{}, err
+		//if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
+		//	fmt.Println(e.Error())
+		//	os.Exit(0)
+		//} else {
+		//	errorLogger.Println(err)
+		//	os.Exit(2)
+		//}
 	}
 	noConf := options.NoConfig
 	configFile := options.ConfigFile
@@ -666,8 +667,9 @@ func ExecuteSiftCmd (cmd string) SearchResult {
 	// 这个过程使options被输入参数所配置
 	args, err = parser.ParseArgs(cmdArgs)
 	if err != nil {
-		errorLogger.Println(err)
-		os.Exit(2)
+		return SearchResult{}, err
+		//errorLogger.Println(err)
+		//os.Exit(2)
 	}
 
 	// 整理patterns
@@ -756,7 +758,7 @@ func ExecuteSiftCmd (cmd string) SearchResult {
 		global.totalResultCount,
 		global.totalMatchCount,
 		global.timeCost,
-	}
+	}, nil
 }
 
 // 打印result
@@ -766,7 +768,7 @@ func PrintResult(result *Result) {
 
 // 测试方法
 func Test () {
-	searchResult := ExecuteSiftCmd("-e sift . -n")
+	searchResult, _ := ExecuteSiftCmd("-e sift . -n")
 	for _, result := range(searchResult.Results) {
 		fmt.Println("这是一个文件的搜索结果：")
 		printResult(result)
