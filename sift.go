@@ -759,11 +759,11 @@ func ExecuteSiftCmd (cmd string) SearchResult {
 	}
 }
 
-//func main () {
-//	searchResult := ExecuteSiftCmd("-e sift . -n")
-//	for _, result := range(searchResult.results) {
-//		fmt.Println("这是一个文件的搜索结果：")
-//		printResult(result)
-//	}
-//	fmt.Println("运算耗时", searchResult.timeCost)
-//}
+func Test () {
+	searchResult := ExecuteSiftCmd("-e sift . -n")
+	for _, result := range(searchResult.results) {
+		fmt.Println("这是一个文件的搜索结果：")
+		printResult(result)
+	}
+	fmt.Println("运算耗时", searchResult.timeCost)
+}
