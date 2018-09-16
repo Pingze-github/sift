@@ -80,42 +80,42 @@ type FileType struct {
 
 type Match struct {
 	// offset of the start of the match
-	start int64
+	Start int64
 	// offset of the end of the match
-	end int64
+	End int64
 	// offset of the beginning of the first line of the match
-	lineStart int64
+	LineStart int64
 	// offset of the end of the last line of the match
-	lineEnd int64
+	LineEnd int64
 	// the match
-	match string
+	Match string
 	// the match including the non-matched text on the first and last line
-	line string
+	Line string
 	// the line number of the beginning of the match
-	lineno int64
+	Lineno int64
 	// the index to global.conditions (if this match belongs to a condition)
-	conditionID int
+	ConditionID int
 	// the context before the match
-	contextBefore *string
+	ContextBefore *string
 	// the context after the match
-	contextAfter *string
+	ContextAfter *string
 }
 
 type Matches []Match
 
 func (e Matches) Len() int           { return len(e) }
 func (e Matches) Swap(i, j int)      { e[i], e[j] = e[j], e[i] }
-func (e Matches) Less(i, j int) bool { return e[i].start < e[j].start }
+func (e Matches) Less(i, j int) bool { return e[i].Start < e[j].Start }
 
 type Result struct {
-	conditionMatches Matches
-	matches          Matches
+	ConditionMatches Matches
+	Matches          Matches
 	// if too many matches are found or input is read only from STDIN,
 	// matches are streamed through a channel
-	matchChan chan Matches
-	streaming bool
-	isBinary  bool
-	target    string
+	MatchChan chan Matches
+	Streaming bool
+	IsBinary  bool
+	Target    string
 }
 
 var (
@@ -160,7 +160,7 @@ var global = struct {
 
 // 返回数据
 type SearchResult struct {
-	Results 	[]*Result
+	Results 	[] *Result
 	MatchCount	int64
 	ResultCount	int64
 	TargetCount	int64
@@ -418,7 +418,7 @@ func processFileTargets() {
 		var reader io.Reader
 
 		if options.TargetsOnly {
-			global.resultsChan <- &Result{target: filepath}
+			global.resultsChan <- &Result{Target: filepath}
 			continue
 		}
 
@@ -524,7 +524,7 @@ func resultCollector() {
 		}
 		global.totalTargetCount++
 		result.applyConditions()
-		if len(result.matches) > 0 {
+		if len(result.Matches) > 0 {
 			global.results = append(global.results, result)
 		}
 	}
@@ -761,17 +761,14 @@ func ExecuteSiftCmd (cmd string) (SearchResult, error) {
 	}, nil
 }
 
-// 打印result
-func PrintResult(result *Result) {
-	printResult(result)
-}
+// 为了使匹配结果可以在包外获取，需对结果集进行转换
 
 // 测试方法
 func Test () {
 	searchResult, _ := ExecuteSiftCmd("-e sift . -n")
 	for _, result := range(searchResult.Results) {
 		fmt.Println("这是一个文件的搜索结果：")
-		printResult(result)
+		PrintResult(result)
 	}
 	fmt.Println("运算耗时", searchResult.TimeCost)
 }

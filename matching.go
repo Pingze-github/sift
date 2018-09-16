@@ -168,8 +168,8 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 					validMatch = true
 				} else {
 					m := newMatches[i]
-					if (!options.Multiline && m.lineEnd > prevMatch.lineEnd) ||
-						(options.Multiline && m.start >= prevMatch.end) {
+					if (!options.Multiline && m.LineEnd > prevMatch.LineEnd) ||
+						(options.Multiline && m.Start >= prevMatch.End) {
 						validMatch = true
 					}
 				}
@@ -201,7 +201,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 			// if a list option is used exit here if possible
 			// 平时不执行
 			if (options.FilesWithMatches || options.FilesWithoutMatch) && !options.Count && len(global.conditions) == 0 {
-				global.resultsChan <- &Result{target: target, matches: []Match{Match{}}}
+				global.resultsChan <- &Result{Target: target, Matches: []Match{Match{}}}
 				return nil
 			}
 
@@ -214,7 +214,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 					resultStreaming = true
 					matchChan = make(chan Matches, 16)
 					// target为文件时执行
-					global.resultsChan <- &Result{target: target, matches: matches, streaming: true, matchChan: matchChan, isBinary: resultIsBinary}
+					global.resultsChan <- &Result{Target: target, Matches: matches, Streaming: true, MatchChan: matchChan, IsBinary: resultIsBinary}
 					defer func() {
 						close(matchChan)
 					}()
@@ -238,7 +238,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 
 	// target为目录时，执行
 	if !resultStreaming {
-		global.resultsChan <- &Result{target: target, matches: matches, conditionMatches: conditionMatches, streaming: false, isBinary: resultIsBinary}
+		global.resultsChan <- &Result{Target: target, Matches: matches, ConditionMatches: conditionMatches, Streaming: false, IsBinary: resultIsBinary}
 	}
 	return nil
 }
@@ -375,15 +375,15 @@ func getMatches(regex *regexp.Regexp, data []byte, testBuffer []byte, offset int
 			}
 
 			m := Match{
-				conditionID:   conditionID,
-				start:         offset + int64(start),
-				end:           offset + int64(end),
-				lineStart:     offset + int64(lineStart),
-				lineEnd:       offset + int64(lineEnd),
-				match:         string(data[start:end]),
-				line:          string(data[lineStart:lineEnd]),
-				contextBefore: contextBefore,
-				contextAfter:  contextAfter,
+				ConditionID:   conditionID,
+				Start:         offset + int64(start),
+				End:           offset + int64(end),
+				LineStart:     offset + int64(lineStart),
+				LineEnd:       offset + int64(lineEnd),
+				Match:         string(data[start:end]),
+				Line:          string(data[lineStart:lineEnd]),
+				ContextBefore: contextBefore,
+				ContextAfter:  contextAfter,
 			}
 
 			// handle special case where '^' matches after the last newline
@@ -402,24 +402,24 @@ func countLines(data []byte, lastConditionMatch int, matches Matches, conditionM
 	if currentMatch < len(matches) || currentConditionMatch < len(conditionMatches) {
 		for i := 0; i < validMatchRange; i++ {
 			if data[i] == 0xa {
-				for currentMatch < len(matches) && offset+int64(i) >= matches[currentMatch].lineStart {
-					matches[currentMatch].lineno = lineCount
+				for currentMatch < len(matches) && offset+int64(i) >= matches[currentMatch].LineStart {
+					matches[currentMatch].Lineno = lineCount
 					currentMatch++
 				}
-				for currentConditionMatch < len(conditionMatches) && offset+int64(i) >= conditionMatches[currentConditionMatch].lineStart {
-					conditionMatches[currentConditionMatch].lineno = lineCount
+				for currentConditionMatch < len(conditionMatches) && offset+int64(i) >= conditionMatches[currentConditionMatch].LineStart {
+					conditionMatches[currentConditionMatch].Lineno = lineCount
 					currentConditionMatch++
 				}
 				lineCount++
 			}
 		}
 		// check for matches on last line without newline
-		for currentMatch < len(matches) && offset+int64(validMatchRange) >= matches[currentMatch].lineStart {
-			matches[currentMatch].lineno = lineCount
+		for currentMatch < len(matches) && offset+int64(validMatchRange) >= matches[currentMatch].LineStart {
+			matches[currentMatch].Lineno = lineCount
 			currentMatch++
 		}
-		for currentConditionMatch < len(conditionMatches) && offset+int64(validMatchRange) >= conditionMatches[currentConditionMatch].lineStart {
-			conditionMatches[currentConditionMatch].lineno = lineCount
+		for currentConditionMatch < len(conditionMatches) && offset+int64(validMatchRange) >= conditionMatches[currentConditionMatch].LineStart {
+			conditionMatches[currentConditionMatch].Lineno = lineCount
 			currentConditionMatch++
 		}
 	} else {
@@ -430,76 +430,76 @@ func countLines(data []byte, lastConditionMatch int, matches Matches, conditionM
 
 // applyConditions removes matches from a result that do not fulfill all conditions
 func (result *Result) applyConditions() {
-	if len(result.matches) == 0 || len(global.conditions) == 0 {
+	if len(result.Matches) == 0 || len(global.conditions) == 0 {
 		return
 	}
 
 	// check conditions that are independent of found matches
 	conditionStatus := make([]bool, len(global.conditions))
 	var conditionFulfilled bool
-	for _, conditionMatch := range result.conditionMatches {
+	for _, conditionMatch := range result.ConditionMatches {
 		conditionFulfilled = false
-		switch global.conditions[conditionMatch.conditionID].conditionType {
+		switch global.conditions[conditionMatch.ConditionID].conditionType {
 		case ConditionFileMatches:
 			conditionFulfilled = true
 		case ConditionLineMatches:
-			if conditionMatch.lineno == global.conditions[conditionMatch.conditionID].lineRangeStart {
+			if conditionMatch.Lineno == global.conditions[conditionMatch.ConditionID].lineRangeStart {
 				conditionFulfilled = true
 			}
 		case ConditionRangeMatches:
-			if conditionMatch.lineno >= global.conditions[conditionMatch.conditionID].lineRangeStart &&
-				conditionMatch.lineno <= global.conditions[conditionMatch.conditionID].lineRangeEnd {
+			if conditionMatch.Lineno >= global.conditions[conditionMatch.ConditionID].lineRangeStart &&
+				conditionMatch.Lineno <= global.conditions[conditionMatch.ConditionID].lineRangeEnd {
 				conditionFulfilled = true
 			}
 		default:
 			// ingore other condition types
-			conditionFulfilled = !global.conditions[conditionMatch.conditionID].negated
+			conditionFulfilled = !global.conditions[conditionMatch.ConditionID].negated
 		}
 		if conditionFulfilled {
-			if global.conditions[conditionMatch.conditionID].negated {
-				result.matches = Matches{}
+			if global.conditions[conditionMatch.ConditionID].negated {
+				result.Matches = Matches{}
 				return
 			}
-			conditionStatus[conditionMatch.conditionID] = true
+			conditionStatus[conditionMatch.ConditionID] = true
 		}
 	}
 	for i := range conditionStatus {
 		if conditionStatus[i] != true && !global.conditions[i].negated {
-			result.matches = Matches{}
+			result.Matches = Matches{}
 			return
 		}
 	}
 
 MatchLoop:
 	// check for each match whether preceded/followed/surrounded conditions are fulfilled
-	for matchIndex := 0; matchIndex < len(result.matches); {
-		match := result.matches[matchIndex]
-		lineno := match.lineno
+	for matchIndex := 0; matchIndex < len(result.Matches); {
+		match := result.Matches[matchIndex]
+		lineno := match.Lineno
 		conditionStatus := make([]bool, len(global.conditions))
-		for _, conditionMatch := range result.conditionMatches {
+		for _, conditionMatch := range result.ConditionMatches {
 			conditionFulfilled := false
-			maxAllowedDistance := global.conditions[conditionMatch.conditionID].within
+			maxAllowedDistance := global.conditions[conditionMatch.ConditionID].within
 			var actualDistance int64 = -1
-			switch global.conditions[conditionMatch.conditionID].conditionType {
+			switch global.conditions[conditionMatch.ConditionID].conditionType {
 			case ConditionPreceded:
-				actualDistance = lineno - conditionMatch.lineno
+				actualDistance = lineno - conditionMatch.Lineno
 				if actualDistance == 0 {
-					conditionFulfilled = conditionMatch.start < match.start
+					conditionFulfilled = conditionMatch.Start < match.Start
 				} else {
 					conditionFulfilled = (actualDistance >= 0) && (maxAllowedDistance == -1 || actualDistance <= maxAllowedDistance)
 				}
 			case ConditionFollowed:
-				actualDistance = conditionMatch.lineno - lineno
+				actualDistance = conditionMatch.Lineno - lineno
 				if actualDistance == 0 {
-					conditionFulfilled = conditionMatch.start > match.start
+					conditionFulfilled = conditionMatch.Start > match.Start
 				} else {
 					conditionFulfilled = (actualDistance >= 0) && (maxAllowedDistance == -1 || actualDistance <= maxAllowedDistance)
 				}
 			case ConditionSurrounded:
-				if lineno > conditionMatch.lineno {
-					actualDistance = lineno - conditionMatch.lineno
+				if lineno > conditionMatch.Lineno {
+					actualDistance = lineno - conditionMatch.Lineno
 				} else {
-					actualDistance = conditionMatch.lineno - lineno
+					actualDistance = conditionMatch.Lineno - lineno
 				}
 				if actualDistance == 0 {
 					conditionFulfilled = true
@@ -508,13 +508,13 @@ MatchLoop:
 				}
 			default:
 				// ingore other condition types
-				conditionFulfilled = !global.conditions[conditionMatch.conditionID].negated
+				conditionFulfilled = !global.conditions[conditionMatch.ConditionID].negated
 			}
 			if conditionFulfilled {
-				if global.conditions[conditionMatch.conditionID].negated {
+				if global.conditions[conditionMatch.ConditionID].negated {
 					goto ConditionFailed
 				} else {
-					conditionStatus[conditionMatch.conditionID] = true
+					conditionStatus[conditionMatch.ConditionID] = true
 				}
 			}
 		}
@@ -527,8 +527,8 @@ MatchLoop:
 		continue MatchLoop
 
 	ConditionFailed:
-		copy(result.matches[matchIndex:], result.matches[matchIndex+1:])
-		result.matches = result.matches[0 : len(result.matches)-1]
+		copy(result.Matches[matchIndex:], result.Matches[matchIndex+1:])
+		result.Matches = result.Matches[0 : len(result.Matches)-1]
 	}
 }
 
@@ -627,17 +627,17 @@ func processReaderInvertMatch(reader io.Reader, matchRegexes []*regexp.Regexp, t
 		}
 		if !matchFound {
 			if options.FilesWithMatches || options.FilesWithoutMatch {
-				global.resultsChan <- &Result{matches: []Match{Match{}}, target: target}
+				global.resultsChan <- &Result{Matches: []Match{Match{}}, Target: target}
 				return nil
 			}
 			m := Match{
-				lineno: linecount,
-				line:   line}
+				Lineno: linecount,
+				Line:   line}
 			matches = append(matches, m)
 
 		}
 	}
-	result := &Result{matches: matches, target: target}
+	result := &Result{Matches: matches, Target: target}
 	global.resultsChan <- result
 	return nil
 }

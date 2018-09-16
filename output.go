@@ -24,12 +24,12 @@ import (
 func resultHandler() {
 	for result := range global.resultsChan {
 		if options.TargetsOnly {
-			fmt.Println(result.target)
+			fmt.Println(result.Target)
 			continue
 		}
 		global.totalTargetCount++
 		result.applyConditions()
-		printResult(result)
+		PrintResult(result)
 	}
 	global.resultsDoneChan <- struct{}{}
 }
@@ -59,36 +59,36 @@ func printLineno(lineno int64, delim string) {
 
 func printColumnNo(m *Match) {
 	if options.ShowColumnNumbers {
-		writeOutput("%d"+options.FieldSeparator, m.start-m.lineStart+1)
+		writeOutput("%d"+options.FieldSeparator, m.Start-m.LineStart+1)
 	}
 }
 
 func printByteOffset(m *Match) {
 	if options.ShowByteOffset {
 		if options.OnlyMatching {
-			writeOutput("%d"+options.FieldSeparator, m.start)
+			writeOutput("%d"+options.FieldSeparator, m.Start)
 		} else {
-			writeOutput("%d"+options.FieldSeparator, m.lineStart)
+			writeOutput("%d"+options.FieldSeparator, m.LineStart)
 		}
 	}
 }
 
 // printMatch prints the context after the previous match, the context before the match and the match itself
 func printMatch(match Match, lastMatch Match, target string, lastPrintedLine *int64) {
-	var matchOutput = match.line
+	var matchOutput = match.Line
 
 	if !options.InvertMatch {
 		if options.Replace != "" {
-			matchOutput = match.match
+			matchOutput = match.Match
 			var matchTest string
 			if options.IgnoreCase {
-				tmp := []byte(match.match)
+				tmp := []byte(match.Match)
 				for i := 0; i < len(tmp); i++ {
 					bytesToLower(tmp, tmp, len(tmp))
 				}
 				matchTest = string(tmp)
 			} else {
-				matchTest = match.match
+				matchTest = match.Match
 			}
 
 			var res []byte
@@ -124,8 +124,8 @@ func printMatch(match Match, lastMatch Match, target string, lastPrintedLine *in
 				matchOutput = matchOutput[0:end]
 			}
 			if options.Color == "on" {
-				start := match.start - match.lineStart
-				end := match.end - match.lineStart
+				start := match.Start - match.LineStart
+				end := match.End - match.LineStart
 				if int(end) <= len(matchOutput) {
 					matchOutput = matchOutput[0:end] + global.termHighlightReset + matchOutput[end:]
 					matchOutput = matchOutput[0:start] + global.termHighlightMatch + matchOutput[start:]
@@ -136,18 +136,18 @@ func printMatch(match Match, lastMatch Match, target string, lastPrintedLine *in
 
 	// print contextAfter of the previous match
 	contextBlockIncomplete := false
-	if lastMatch.contextAfter != nil {
-		contextLines := strings.Split(*lastMatch.contextAfter, "\n")
+	if lastMatch.ContextAfter != nil {
+		contextLines := strings.Split(*lastMatch.ContextAfter, "\n")
 		for index, line := range contextLines {
 			var lineno int64
 			if options.Multiline {
-				multilineLineCount := len(strings.Split(lastMatch.line, "\n")) - 1
-				lineno = lastMatch.lineno + int64(index) + 1 + int64(multilineLineCount)
+				multilineLineCount := len(strings.Split(lastMatch.Line, "\n")) - 1
+				lineno = lastMatch.Lineno + int64(index) + 1 + int64(multilineLineCount)
 			} else {
-				lineno = lastMatch.lineno + int64(index) + 1
+				lineno = lastMatch.Lineno + int64(index) + 1
 			}
 			// line is not part of the current match
-			if lineno < match.lineno {
+			if lineno < match.Lineno {
 				printFilename(target, "-")
 				printLineno(lineno, "-")
 				writeOutput("%s\n", line)
@@ -157,18 +157,18 @@ func printMatch(match Match, lastMatch Match, target string, lastPrintedLine *in
 			}
 		}
 	}
-	if (lastMatch.contextAfter != nil || match.contextBefore != nil) && !contextBlockIncomplete {
-		if match.lineno-int64(options.ContextBefore) > *lastPrintedLine+1 {
+	if (lastMatch.ContextAfter != nil || match.ContextBefore != nil) && !contextBlockIncomplete {
+		if match.Lineno-int64(options.ContextBefore) > *lastPrintedLine+1 {
 			// at least one line between the contextAfter of the previous match and the contextBefore of the current match
 			fmt.Fprintln(global.outputFile, "--")
 		}
 	}
 
 	// print contextBefore of the current match
-	if match.contextBefore != nil {
-		contextLines := strings.Split(*match.contextBefore, "\n")
+	if match.ContextBefore != nil {
+		contextLines := strings.Split(*match.ContextBefore, "\n")
 		for index, line := range contextLines {
-			lineno := match.lineno - int64(len(contextLines)) + int64(index)
+			lineno := match.Lineno - int64(len(contextLines)) + int64(index)
 			if lineno > *lastPrintedLine {
 				printFilename(target, "-")
 				printLineno(lineno, "-")
@@ -180,16 +180,16 @@ func printMatch(match Match, lastMatch Match, target string, lastPrintedLine *in
 
 	// print current match
 	if options.Multiline {
-		lines := strings.Split(match.line, "\n")
+		lines := strings.Split(match.Line, "\n")
 		if len(lines) > 1 && options.Replace == "" {
 			firstLine := lines[0]
 			lastLine := lines[len(lines)-1]
-			firstLineOffset := match.start - match.lineStart
-			lastLineOffset := int64(len(lastLine)) - (match.lineEnd - match.end)
+			firstLineOffset := match.Start - match.LineStart
+			lastLineOffset := int64(len(lastLine)) - (match.LineEnd - match.End)
 
 			// first line of multiline match with partial highlighting
 			printFilename(target, options.FieldSeparator)
-			printLineno(match.lineno, options.FieldSeparator)
+			printLineno(match.Lineno, options.FieldSeparator)
 			printColumnNo(&match)
 			printByteOffset(&match)
 			writeOutput("%s%s%s%s\n", firstLine[0:firstLineOffset], global.termHighlightMatch,
@@ -199,41 +199,41 @@ func printMatch(match Match, lastMatch Match, target string, lastPrintedLine *in
 			for i := 1; i < len(lines)-1; i++ {
 				line := lines[i]
 				printFilename(target, options.FieldSeparator)
-				printLineno(match.lineno+int64(i), options.FieldSeparator)
+				printLineno(match.Lineno+int64(i), options.FieldSeparator)
 				writeOutput("%s%s%s\n", global.termHighlightMatch, line, global.termHighlightReset)
 			}
 
 			// last line of multiline match with partial highlighting
 			printFilename(target, options.FieldSeparator)
-			printLineno(match.lineno+int64(len(lines))-1, options.FieldSeparator)
+			printLineno(match.Lineno+int64(len(lines))-1, options.FieldSeparator)
 			writeOutput("%s%s%s%s%s", global.termHighlightMatch, lastLine[0:lastLineOffset],
 				global.termHighlightReset, lastLine[lastLineOffset:len(lastLine)], options.OutputSeparator)
-			*lastPrintedLine = match.lineno + int64(len(lines)-1)
+			*lastPrintedLine = match.Lineno + int64(len(lines)-1)
 		} else {
 			// single line output in multiline mode or replace option used
 			printFilename(target, options.FieldSeparator)
-			printLineno(match.lineno, options.FieldSeparator)
+			printLineno(match.Lineno, options.FieldSeparator)
 			printColumnNo(&match)
 			printByteOffset(&match)
 			writeOutput("%s%s", matchOutput, options.OutputSeparator)
-			*lastPrintedLine = match.lineno + int64(len(lines)-1)
+			*lastPrintedLine = match.Lineno + int64(len(lines)-1)
 		}
 	} else {
 		// single line output
 		printFilename(target, options.FieldSeparator)
-		printLineno(match.lineno, options.FieldSeparator)
+		printLineno(match.Lineno, options.FieldSeparator)
 		printColumnNo(&match)
 		printByteOffset(&match)
 		writeOutput("%s%s", matchOutput, options.OutputSeparator)
-		*lastPrintedLine = match.lineno
+		*lastPrintedLine = match.Lineno
 	}
 }
 
 // printResult prints results using printMatch and handles various output options.
-func printResult(result *Result) {
+func PrintResult(result *Result) {
 	var matchCount int64
-	target := result.target
-	matches := result.matches
+	target := result.Target
+	matches := result.Matches
 	if options.FilesWithoutMatch {
 		if len(matches) == 0 {
 			writeOutput("%s\n", target)
@@ -254,9 +254,9 @@ func printResult(result *Result) {
 		if options.Limit != 0 && matchCount > options.Limit {
 			matchCount = options.Limit
 		}
-		if result.streaming {
+		if result.Streaming {
 		countingMatchesLoop:
-			for matches := range result.matchChan {
+			for matches := range result.MatchChan {
 				matchCount += int64(len(matches))
 				if options.Limit != 0 && matchCount >= options.Limit {
 					matchCount = options.Limit
@@ -296,8 +296,8 @@ func printResult(result *Result) {
 		}
 	}
 
-	if result.isBinary && !options.BinarySkip && !options.BinaryAsText {
-		filename := result.target
+	if result.IsBinary && !options.BinarySkip && !options.BinaryAsText {
+		filename := result.Target
 		if options.OutputUnixPath {
 			filename = filepath.ToSlash(filename)
 		}
@@ -308,7 +308,7 @@ func printResult(result *Result) {
 	}
 
 	if options.GroupByFile {
-		filename := result.target
+		filename := result.Target
 		if options.OutputUnixPath {
 			filename = filepath.ToSlash(filename)
 		}
@@ -319,11 +319,11 @@ func printResult(result *Result) {
 	var lastMatch Match
 
 	// print contextBefore of first match
-	if m := matches[0]; m.contextBefore != nil {
-		contextLines := strings.Split(*m.contextBefore, "\n")
+	if m := matches[0]; m.ContextBefore != nil {
+		contextLines := strings.Split(*m.ContextBefore, "\n")
 		for index, line := range contextLines {
-			lineno := m.lineno - int64(len(contextLines)) + int64(index)
-			printFilename(result.target, "-")
+			lineno := m.Lineno - int64(len(contextLines)) + int64(index)
+			printFilename(result.Target, "-")
 			printLineno(lineno, "-")
 			writeOutput("%s\n", line)
 			lastPrintedLine = lineno
@@ -333,18 +333,18 @@ func printResult(result *Result) {
 	// print matches with their context
 	lastMatch = matches[0]
 	for _, match := range matches {
-		printMatch(match, lastMatch, result.target, &lastPrintedLine)
+		printMatch(match, lastMatch, result.Target, &lastPrintedLine)
 		lastMatch = match
 		matchCount++
 		if options.Limit != 0 && matchCount >= options.Limit {
 			break
 		}
 	}
-	if result.streaming {
+	if result.Streaming {
 	matchStreamLoop:
-		for matches := range result.matchChan {
+		for matches := range result.MatchChan {
 			for _, match := range matches {
-				printMatch(match, lastMatch, result.target, &lastPrintedLine)
+				printMatch(match, lastMatch, result.Target, &lastPrintedLine)
 				lastMatch = match
 				matchCount++
 				if options.Limit != 0 && matchCount >= options.Limit {
@@ -355,17 +355,17 @@ func printResult(result *Result) {
 	}
 
 	// print contextAfter of last match
-	if lastMatch.contextAfter != nil {
-		contextLines := strings.Split(*lastMatch.contextAfter, "\n")
+	if lastMatch.ContextAfter != nil {
+		contextLines := strings.Split(*lastMatch.ContextAfter, "\n")
 		for index, line := range contextLines {
 			var lineno int64
 			if options.Multiline {
-				multilineLineCount := len(strings.Split(lastMatch.line, "\n")) - 1
-				lineno = lastMatch.lineno + int64(index) + 1 + int64(multilineLineCount)
+				multilineLineCount := len(strings.Split(lastMatch.Line, "\n")) - 1
+				lineno = lastMatch.Lineno + int64(index) + 1 + int64(multilineLineCount)
 			} else {
-				lineno = lastMatch.lineno + int64(index) + 1
+				lineno = lastMatch.Lineno + int64(index) + 1
 			}
-			printFilename(result.target, "-")
+			printFilename(result.Target, "-")
 			printLineno(lineno, "-")
 			writeOutput("%s\n", line)
 			lastPrintedLine = lineno
