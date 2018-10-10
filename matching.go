@@ -25,7 +25,7 @@ import (
 )
 
 // processReader is the main routine working on an io.Reader
-func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte, testBuffer []byte, target string) error {
+func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte, testBuffer []byte, target string, global *Global) error {
 	var (
 		bufferOffset             int
 		err                      error
@@ -183,7 +183,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 			}
 		}
 
-		for conditionID, condition := range global.conditions {
+		for conditionID, condition := range (*global).conditions {
 			tmpMatches := getMatches(condition.regex, data, testDataPtr, offset, length, validMatchRange, conditionID, target)
 			if len(tmpMatches) > 0 {
 				conditionMatches = append(conditionMatches, tmpMatches...)
@@ -193,15 +193,15 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 			sort.Sort(Matches(conditionMatches))
 		}
 
-		if options.ShowLineNumbers || options.ContextBefore > 0 || options.ContextAfter > 0 || len(global.conditions) > 0 {
+		if options.ShowLineNumbers || options.ContextBefore > 0 || options.ContextAfter > 0 || len((*global).conditions) > 0 {
 			linecount = countLines(data, lastConditionMatch, newMatches, conditionMatches, offset, validMatchRange, linecount)
 		}
 
 		if len(newMatches) > 0 {
 			// if a list option is used exit here if possible
 			// 平时不执行
-			if (options.FilesWithMatches || options.FilesWithoutMatch) && !options.Count && len(global.conditions) == 0 {
-				global.resultsChan <- &Result{Target: target, Matches: []Match{Match{}}}
+			if (options.FilesWithMatches || options.FilesWithoutMatch) && !options.Count && len((*global).conditions) == 0 {
+				(*global).resultsChan <- &Result{Target: target, Matches: []Match{Match{}}}
 				return nil
 			}
 
@@ -210,11 +210,11 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 				matchChan <- newMatches
 			} else {
 				matches = append(matches, newMatches...)
-				if len(matches) > global.streamingThreshold && global.streamingAllowed {
+				if len(matches) > (*global).streamingThreshold && (*global).streamingAllowed {
 					resultStreaming = true
 					matchChan = make(chan Matches, 16)
 					// target为文件时执行
-					global.resultsChan <- &Result{Target: target, Matches: matches, Streaming: true, MatchChan: matchChan, IsBinary: resultIsBinary}
+					(*global).resultsChan <- &Result{Target: target, Matches: matches, Streaming: true, MatchChan: matchChan, IsBinary: resultIsBinary}
 					defer func() {
 						close(matchChan)
 					}()
@@ -238,7 +238,7 @@ func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte,
 
 	// target为目录时，执行
 	if !resultStreaming {
-		global.resultsChan <- &Result{Target: target, Matches: matches, ConditionMatches: conditionMatches, Streaming: false, IsBinary: resultIsBinary}
+		(*global).resultsChan <- &Result{Target: target, Matches: matches, ConditionMatches: conditionMatches, Streaming: false, IsBinary: resultIsBinary}
 	}
 	return nil
 }
@@ -429,34 +429,34 @@ func countLines(data []byte, lastConditionMatch int, matches Matches, conditionM
 }
 
 // applyConditions removes matches from a result that do not fulfill all conditions
-func (result *Result) applyConditions() {
-	if len(result.Matches) == 0 || len(global.conditions) == 0 {
+func (result *Result) applyConditions(global *Global) {
+	if len(result.Matches) == 0 || len((*global).conditions) == 0 {
 		return
 	}
 
 	// check conditions that are independent of found matches
-	conditionStatus := make([]bool, len(global.conditions))
+	conditionStatus := make([]bool, len((*global).conditions))
 	var conditionFulfilled bool
 	for _, conditionMatch := range result.ConditionMatches {
 		conditionFulfilled = false
-		switch global.conditions[conditionMatch.ConditionID].conditionType {
+		switch (*global).conditions[conditionMatch.ConditionID].conditionType {
 		case ConditionFileMatches:
 			conditionFulfilled = true
 		case ConditionLineMatches:
-			if conditionMatch.Lineno == global.conditions[conditionMatch.ConditionID].lineRangeStart {
+			if conditionMatch.Lineno == (*global).conditions[conditionMatch.ConditionID].lineRangeStart {
 				conditionFulfilled = true
 			}
 		case ConditionRangeMatches:
-			if conditionMatch.Lineno >= global.conditions[conditionMatch.ConditionID].lineRangeStart &&
-				conditionMatch.Lineno <= global.conditions[conditionMatch.ConditionID].lineRangeEnd {
+			if conditionMatch.Lineno >= (*global).conditions[conditionMatch.ConditionID].lineRangeStart &&
+				conditionMatch.Lineno <= (*global).conditions[conditionMatch.ConditionID].lineRangeEnd {
 				conditionFulfilled = true
 			}
 		default:
 			// ingore other condition types
-			conditionFulfilled = !global.conditions[conditionMatch.ConditionID].negated
+			conditionFulfilled = !(*global).conditions[conditionMatch.ConditionID].negated
 		}
 		if conditionFulfilled {
-			if global.conditions[conditionMatch.ConditionID].negated {
+			if (*global).conditions[conditionMatch.ConditionID].negated {
 				result.Matches = Matches{}
 				return
 			}
@@ -464,7 +464,7 @@ func (result *Result) applyConditions() {
 		}
 	}
 	for i := range conditionStatus {
-		if conditionStatus[i] != true && !global.conditions[i].negated {
+		if conditionStatus[i] != true && !(*global).conditions[i].negated {
 			result.Matches = Matches{}
 			return
 		}
@@ -475,12 +475,12 @@ MatchLoop:
 	for matchIndex := 0; matchIndex < len(result.Matches); {
 		match := result.Matches[matchIndex]
 		lineno := match.Lineno
-		conditionStatus := make([]bool, len(global.conditions))
+		conditionStatus := make([]bool, len((*global).conditions))
 		for _, conditionMatch := range result.ConditionMatches {
 			conditionFulfilled := false
-			maxAllowedDistance := global.conditions[conditionMatch.ConditionID].within
+			maxAllowedDistance := (*global).conditions[conditionMatch.ConditionID].within
 			var actualDistance int64 = -1
-			switch global.conditions[conditionMatch.ConditionID].conditionType {
+			switch (*global).conditions[conditionMatch.ConditionID].conditionType {
 			case ConditionPreceded:
 				actualDistance = lineno - conditionMatch.Lineno
 				if actualDistance == 0 {
@@ -508,10 +508,10 @@ MatchLoop:
 				}
 			default:
 				// ingore other condition types
-				conditionFulfilled = !global.conditions[conditionMatch.ConditionID].negated
+				conditionFulfilled = !(*global).conditions[conditionMatch.ConditionID].negated
 			}
 			if conditionFulfilled {
-				if global.conditions[conditionMatch.ConditionID].negated {
+				if (*global).conditions[conditionMatch.ConditionID].negated {
 					goto ConditionFailed
 				} else {
 					conditionStatus[conditionMatch.ConditionID] = true
@@ -519,7 +519,7 @@ MatchLoop:
 			}
 		}
 		for i := range conditionStatus {
-			if conditionStatus[i] != true && !global.conditions[i].negated {
+			if conditionStatus[i] != true && !(*global).conditions[i].negated {
 				goto ConditionFailed
 			}
 		}
@@ -611,7 +611,7 @@ func getAfterContextFromFile(target string, offset int64, end int) *string {
 
 // processInvertMatchesReader is used to handle the '--invert' option.
 // This function works line based and provides very limited support for options.
-func processReaderInvertMatch(reader io.Reader, matchRegexes []*regexp.Regexp, target string) error {
+func processReaderInvertMatch(reader io.Reader, matchRegexes []*regexp.Regexp, target string, global *Global) error {
 	matches := make([]Match, 0, 16)
 	var linecount int64
 	var matchFound bool
@@ -620,14 +620,14 @@ func processReaderInvertMatch(reader io.Reader, matchRegexes []*regexp.Regexp, t
 		line := scanner.Text()
 		linecount++
 		matchFound = false
-		for _, re := range global.matchRegexes {
+		for _, re := range (*global).matchRegexes {
 			if re.MatchString(line) {
 				matchFound = true
 			}
 		}
 		if !matchFound {
 			if options.FilesWithMatches || options.FilesWithoutMatch {
-				global.resultsChan <- &Result{Matches: []Match{Match{}}, Target: target}
+				(*global).resultsChan <- &Result{Matches: []Match{Match{}}, Target: target}
 				return nil
 			}
 			m := Match{
@@ -638,6 +638,6 @@ func processReaderInvertMatch(reader io.Reader, matchRegexes []*regexp.Regexp, t
 		}
 	}
 	result := &Result{Matches: matches, Target: target}
-	global.resultsChan <- result
+	(*global).resultsChan <- result
 	return nil
 }

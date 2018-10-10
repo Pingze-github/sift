@@ -19,8 +19,8 @@ import (
 	"regexp"
 )
 
-func init() {
-	global.fileTypesMap = map[string]FileType{
+func initFileTypes(global *Global) {
+	(*global).fileTypesMap = map[string]FileType{
 		"go": FileType{
 			Patterns: []string{"*.go"},
 		},

@@ -93,7 +93,7 @@ type Match struct {
 	Line string
 	// the line number of the beginning of the match
 	Lineno int64
-	// the index to global.conditions (if this match belongs to a condition)
+	// the index to (*global).conditions (if this match belongs to a condition)
 	ConditionID int
 	// the context before the match
 	ContextBefore *string
@@ -124,7 +124,8 @@ var (
 	errorLogger    = log.New(os.Stderr, "Error: ", 0)
 	errLineTooLong = errors.New("line too long")
 )
-var global = struct {
+
+type Global struct {
 	conditions            []Condition
 	filesChan             chan string
 	directoryChan         chan string
@@ -152,55 +153,57 @@ var global = struct {
 	totalResultCount      int64
 	totalTargetCount      int64
 	timeCost			  time.Duration
-}{
-	outputFile:         os.Stdout,
-	netTcpRegex:        regexp.MustCompile(`^(tcp[46]?)://(.*:\d+)$`),
-	streamingThreshold: 1 << 16,
 }
+
+//var global *Global = Global{
+//	outputFile:         os.Stdout,
+//	netTcpRegex:        regexp.MustCompile(`^(tcp[46]?)://(.*:\d+)$`),
+//	streamingThreshold: 1 << 16,
+//}
 
 // 返回数据
 type SearchResult struct {
 	Results 	[] *Result
-	MatchCount	int64
-	ResultCount	int64
-	TargetCount	int64
+	//MatchCount	int64
+	//ResultCount	int64
+	//TargetCount	int64
 	TimeCost	time.Duration
 }
 
-// processDirectories reads global.directoryChan and processes
+// processDirectories reads (*global).directoryChan and processes
 // directories via processDirectory.
-func processDirectories() {
+func processDirectories(global *Global) {
 	n := options.Cores
 	if n > MaxDirRecursionRoutines {
 		n = MaxDirRecursionRoutines
 	}
 	for i := 0; i < n; i++ {
 		go func() {
-			for dirname := range global.directoryChan {
-				processDirectory(dirname)
+			for dirname := range (*global).directoryChan {
+				processDirectory(dirname, global)
 			}
 		}()
 	}
 }
 
-// enqueueDirectory enqueues directories on global.directoryChan.
+// enqueueDirectory enqueues directories on (*global).directoryChan.
 // If the channel blocks, the directory is processed directly.
-func enqueueDirectory(dirname string) {
-	global.recurseWaitGroup.Add(1)
+func enqueueDirectory(dirname string, global *Global) {
+	(*global).recurseWaitGroup.Add(1)
 	select {
-	case global.directoryChan <- dirname:
+	case (*global).directoryChan <- dirname:
 	default:
-		processDirectory(dirname)
+		processDirectory(dirname, global)
 	}
 }
 
 // processDirectory recurses into a directory and sends all files
-// fulfilling the selected options on global.filesChan
-func processDirectory(dirname string) {
-	defer global.recurseWaitGroup.Done()
+// fulfilling the selected options on (*global).filesChan
+func processDirectory(dirname string, global *Global) {
+	defer (*global).recurseWaitGroup.Done()
 	var gic *gitignore.Checker
 	if options.Git {
-		gic = gitignore.NewCheckerWithCache(global.gitignoreCache)
+		gic = gitignore.NewCheckerWithCache((*global).gitignoreCache)
 		err := gic.LoadBasePath(dirname)
 		if err != nil {
 			errorLogger.Printf("cannot load gitignore files for path '%s': %s", dirname, err)
@@ -258,7 +261,7 @@ func processDirectory(dirname string) {
 						continue nextEntry
 					}
 				}
-				enqueueDirectory(fullpath)
+				enqueueDirectory(fullpath, global)
 				continue nextEntry
 			}
 
@@ -274,7 +277,7 @@ func processDirectory(dirname string) {
 							errorLogger.Printf("cannot follow symlink '%s': %s\n", fullpath, err)
 						}
 						if realFi.IsDir() {
-							enqueueDirectory(realPath)
+							enqueueDirectory(realPath, global)
 							continue nextEntry
 						} else {
 							if realFi.Mode()&os.ModeType != 0 {
@@ -288,13 +291,13 @@ func processDirectory(dirname string) {
 			}
 
 			// check file path options
-			if global.excludeFilepathRegex != nil {
-				if global.excludeFilepathRegex.MatchString(fullpath) {
+			if (*global).excludeFilepathRegex != nil {
+				if (*global).excludeFilepathRegex.MatchString(fullpath) {
 					continue nextEntry
 				}
 			}
-			if global.includeFilepathRegex != nil {
-				if !global.includeFilepathRegex.MatchString(fullpath) {
+			if (*global).includeFilepathRegex != nil {
+				if !(*global).includeFilepathRegex.MatchString(fullpath) {
 					continue nextEntry
 				}
 			}
@@ -344,14 +347,14 @@ func processDirectory(dirname string) {
 			// check file type options
 			if len(options.ExcludeTypes) > 0 {
 				for _, t := range strings.Split(options.ExcludeTypes, ",") {
-					for _, filePattern := range global.fileTypesMap[t].Patterns {
+					for _, filePattern := range (*global).fileTypesMap[t].Patterns {
 						if matched, _ := filepath.Match(filePattern, fi.Name()); matched {
 							continue nextEntry
 						}
 					}
-					sr := global.fileTypesMap[t].ShebangRegex
+					sr := (*global).fileTypesMap[t].ShebangRegex
 					if sr != nil {
-						if m, err := checkShebang(global.fileTypesMap[t].ShebangRegex, fullpath); m && err == nil {
+						if m, err := checkShebang((*global).fileTypesMap[t].ShebangRegex, fullpath); m && err == nil {
 							continue nextEntry
 						}
 					}
@@ -359,14 +362,14 @@ func processDirectory(dirname string) {
 			}
 			if len(options.IncludeTypes) > 0 {
 				for _, t := range strings.Split(options.IncludeTypes, ",") {
-					for _, filePattern := range global.fileTypesMap[t].Patterns {
+					for _, filePattern := range (*global).fileTypesMap[t].Patterns {
 						if matched, _ := filepath.Match(filePattern, fi.Name()); matched {
 							goto includeTypeFound
 						}
 					}
-					sr := global.fileTypesMap[t].ShebangRegex
+					sr := (*global).fileTypesMap[t].ShebangRegex
 					if sr != nil {
-						if m, err := checkShebang(global.fileTypesMap[t].ShebangRegex, fullpath); err != nil || m {
+						if m, err := checkShebang((*global).fileTypesMap[t].ShebangRegex, fullpath); err != nil || m {
 							goto includeTypeFound
 						}
 					}
@@ -381,7 +384,7 @@ func processDirectory(dirname string) {
 				}
 			}
 
-			global.filesChan <- fullpath
+			(*global).filesChan <- fullpath
 		}
 	}
 }
@@ -399,42 +402,42 @@ func checkShebang(regex *regexp.Regexp, filepath string) (bool, error) {
 
 // processFileTargets reads filesChan, builds an io.Reader for the target and calls processReader
 // 关键 文件搜索
-func processFileTargets() {
+func processFileTargets(global *Global) {
 
 	// 控制等待组完成
-	defer global.targetsWaitGroup.Done()
+	defer (*global).targetsWaitGroup.Done()
 
 	dataBuffer := make([]byte, InputBlockSize)
 	testBuffer := make([]byte, InputBlockSize)
-	matchRegexes := make([]*regexp.Regexp, len(global.matchPatterns))
-	for i := range global.matchPatterns {
-		matchRegexes[i] = regexp.MustCompile(global.matchPatterns[i])
+	matchRegexes := make([]*regexp.Regexp, len((*global).matchPatterns))
+	for i := range (*global).matchPatterns {
+		matchRegexes[i] = regexp.MustCompile((*global).matchPatterns[i])
 	}
 
 	// 从filesChan中取出filepath
-	for filepath := range global.filesChan {
+	for filePath := range (*global).filesChan {
 		var err error
 		var infile *os.File
 		var reader io.Reader
 
 		if options.TargetsOnly {
-			global.resultsChan <- &Result{Target: filepath}
+			(*global).resultsChan <- &Result{Target: filePath}
 			continue
 		}
 
 		// 读取文件为infile
-		if filepath == "-" {
+		if filePath == "-" {
 			infile = os.Stdin
 		} else {
 
-			infile, err = os.Open(filepath)
+			infile, err = os.Open(filePath)
 			if err != nil {
-				errorLogger.Printf("cannot open file '%s': %s\n", filepath, err)
+				errorLogger.Printf("cannot open file '%s': %s\n", filePath, err)
 				continue
 			}
 		}
 
-		if options.Zip && strings.HasSuffix(filepath, ".gz") {
+		if options.Zip && strings.HasSuffix(filePath, ".gz") {
 			rawReader := infile
 			reader, err = gzip.NewReader(rawReader)
 			if err != nil {
@@ -451,7 +454,7 @@ func processFileTargets() {
 		}
 
 		if options.InvertMatch {
-			err = processReaderInvertMatch(reader, matchRegexes, filepath)
+			err = processReaderInvertMatch(reader, matchRegexes, filePath, global)
 		} else {
 			// 正常进入这个分支
 			// reader 文件reader io.Reader
@@ -459,18 +462,18 @@ func processFileTargets() {
 			// dataBuffer 结果buffer
 			// testBuffer 结果buffer
 			// testBuffer 结果buffer
-			// filepath 文件路径
-			err = processReader(reader, matchRegexes, dataBuffer, testBuffer, filepath)
+			// filePath 文件路径
+			err = processReader(reader, matchRegexes, dataBuffer, testBuffer, filePath, global)
 		}
 		if err != nil {
 			if err == errLineTooLong {
-				global.totalLineLengthErrors += 1
+				(*global).totalLineLengthErrors += 1
 				if options.ErrShowLineLength {
 					errmsg := fmt.Sprintf("file contains very long lines (>= %d bytes). See options --blocksize and --err-skip-line-length.", InputBlockSize)
-					errorLogger.Printf("cannot process data from file '%s': %s\n", filepath, errmsg)
+					errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, errmsg)
 				}
 			} else {
-				errorLogger.Printf("cannot process data from file '%s': %s\n", filepath, err)
+				errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, err)
 			}
 		}
 		infile.Close()
@@ -478,15 +481,15 @@ func processFileTargets() {
 }
 
 // processNetworkTarget starts a listening TCP socket and calls processReader
-func processNetworkTarget(target string) {
-	matchRegexes := make([]*regexp.Regexp, len(global.matchPatterns))
-	for i := range global.matchPatterns {
-		matchRegexes[i] = regexp.MustCompile(global.matchPatterns[i])
+func processNetworkTarget(target string, global *Global) {
+	matchRegexes := make([]*regexp.Regexp, len((*global).matchPatterns))
+	for i := range (*global).matchPatterns {
+		matchRegexes[i] = regexp.MustCompile((*global).matchPatterns[i])
 	}
-	defer global.targetsWaitGroup.Done()
+	defer (*global).targetsWaitGroup.Done()
 
 	var reader io.Reader
-	netParams := global.netTcpRegex.FindStringSubmatch(target)
+	netParams := (*global).netTcpRegex.FindStringSubmatch(target)
 	proto := netParams[1]
 	addr := netParams[2]
 
@@ -509,7 +512,7 @@ func processNetworkTarget(target string) {
 
 	dataBuffer := make([]byte, InputBlockSize)
 	testBuffer := make([]byte, InputBlockSize)
-	err = processReader(reader, matchRegexes, dataBuffer, testBuffer, target)
+	err = processReader(reader, matchRegexes, dataBuffer, testBuffer, target, global)
 	if err != nil {
 		errorLogger.Printf("error processing data from '%s'\n", target)
 		return
@@ -517,59 +520,59 @@ func processNetworkTarget(target string) {
 }
 
 // 结果收集
-func resultCollector() {
-	for result := range global.resultsChan {
+func resultCollector(global *Global) {
+	for result := range (*global).resultsChan {
 		if options.TargetsOnly {
 			continue
 		}
-		global.totalTargetCount++
-		result.applyConditions()
+		(*global).totalTargetCount++
+		result.applyConditions(global)
 		if len(result.Matches) > 0 {
-			global.results = append(global.results, result)
+			(*global).results = append((*global).results, result)
 		}
 	}
-	global.resultsDoneChan <- struct{}{}
+	(*global).resultsDoneChan <- struct{}{}
 }
 
 // 执行搜索
-func executeSearch(targets []string) (ret int, err error) {
+func executeSearch(targets []string, global *Global) (ret int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			ret = 2
-			err = errors.New(r.(string))
+			return
 		}
 	}()
 	tstart := time.Now()
-	global.filesChan = make(chan string, 256)
-	global.directoryChan = make(chan string, 128)
-	global.resultsChan = make(chan *Result, 128)
-	global.resultsDoneChan = make(chan struct{})
-	global.gitignoreCache = gitignore.NewGitIgnoreCache()
-	global.totalTargetCount = 0
-	global.totalLineLengthErrors = 0
-	global.totalMatchCount = 0
-	global.totalResultCount = 0
+	(*global).filesChan = make(chan string, 256)
+	(*global).directoryChan = make(chan string, 128)
+	(*global).resultsChan = make(chan *Result, 128)
+	(*global).resultsDoneChan = make(chan struct{})
+	(*global).gitignoreCache = gitignore.NewGitIgnoreCache()
+	(*global).totalTargetCount = 0
+	(*global).totalLineLengthErrors = 0
+	(*global).totalMatchCount = 0
+	(*global).totalResultCount = 0
 
 	// 关键：结果处理
 	// go resultHandler()
-	go resultCollector()
+	go resultCollector(global)
 
 	for i := 0; i < options.Cores; i++ {
-		global.targetsWaitGroup.Add(1)
+		(*global).targetsWaitGroup.Add(1)
 		// 关键：文件目标处理
-		go processFileTargets()
+		go processFileTargets(global)
 	}
 
 	// 关键：目录目标处理
-	go processDirectories()
+	go processDirectories(global)
 
 	for _, target := range targets {
 		switch {
 		case target == "-":
-			global.filesChan <- "-"
-		case global.netTcpRegex.MatchString(target):
-			global.targetsWaitGroup.Add(1)
-			go processNetworkTarget(target)
+			(*global).filesChan <- "-"
+		case (*global).netTcpRegex.MatchString(target):
+			(*global).targetsWaitGroup.Add(1)
+			go processNetworkTarget(target, global)
 		default:
 			// 进入这里
 			fileinfo, err := os.Stat(target)
@@ -582,41 +585,39 @@ func executeSearch(targets []string) (ret int, err error) {
 			}
 			if fileinfo.IsDir() {
 				// 目录搜索
-				global.recurseWaitGroup.Add(1)
-				global.directoryChan <- target
+				(*global).recurseWaitGroup.Add(1)
+				(*global).directoryChan <- target
 			} else {
 				// 文件搜索
 				// 将目标文件送入 filesChan
 
-				global.filesChan <- target
+				(*global).filesChan <- target
 			}
 		}
 	}
 
-	global.recurseWaitGroup.Wait()
-	close(global.directoryChan)
+	(*global).recurseWaitGroup.Wait()
+	close((*global).directoryChan)
+	close((*global).filesChan)
 
-	close(global.filesChan)
-	global.targetsWaitGroup.Wait()
-
-	// 阻塞直到resultsChan关闭，所有结果收集完成
-	close(global.resultsChan)
-	<-global.resultsDoneChan
+	(*global).targetsWaitGroup.Wait()
+	close((*global).resultsChan)
+	<-(*global).resultsDoneChan
 
 	var retVal int
-	if global.totalResultCount > 0 {
+	if (*global).totalResultCount > 0 {
 		retVal = 0
 	} else {
 		retVal = 1
 	}
 
-	if !options.ErrSkipLineLength && !options.ErrShowLineLength && global.totalLineLengthErrors > 0 {
-		errorLogger.Printf("%d files skipped due to very long lines (>= %d bytes). See options --blocksize, --err-show-line-length and --err-skip-line-length.", global.totalLineLengthErrors, InputBlockSize)
+	if !options.ErrSkipLineLength && !options.ErrShowLineLength && (*global).totalLineLengthErrors > 0 {
+		errorLogger.Printf("%d files skipped due to very long lines (>= %d bytes). See options --blocksize, --err-show-line-length and --err-skip-line-length.", (*global).totalLineLengthErrors, InputBlockSize)
 	}
 
 	// 统计运算时间
 	tend := time.Now()
-	global.timeCost = tend.Sub(tstart)
+	(*global).timeCost = tend.Sub(tstart)
 
 	return retVal, nil
 }
@@ -624,6 +625,16 @@ func executeSearch(targets []string) (ret int, err error) {
 
 // 执行sift命令。可以传入sift执行命令（参数部分），来执行操作并返回结果
 func ExecuteSiftCmd (cmd string) (SearchResult, error) {
+
+	// 重新初始化
+	global := &Global{
+		outputFile:         os.Stdout,
+		netTcpRegex:        regexp.MustCompile(`^(tcp[46]?)://(.*:\d+)$`),
+		streamingThreshold: 1 << 16,
+	}
+
+	initFileTypes(global)
+
 	var targets []string
 	var args []string
 	var err error
@@ -645,13 +656,6 @@ func ExecuteSiftCmd (cmd string) (SearchResult, error) {
 
 	if err != nil {
 		return SearchResult{}, err
-		//if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
-		//	fmt.Println(e.Error())
-		//	os.Exit(0)
-		//} else {
-		//	errorLogger.Println(err)
-		//	os.Exit(2)
-		//}
 	}
 	noConf := options.NoConfig
 	configFile := options.ConfigFile
@@ -674,7 +678,7 @@ func ExecuteSiftCmd (cmd string) (SearchResult, error) {
 
 	// 整理patterns
 	for _, pattern := range options.Patterns {
-		global.matchPatterns = append(global.matchPatterns, pattern)
+		(*global).matchPatterns = append((*global).matchPatterns, pattern)
 	}
 
 	// 未进入
@@ -686,17 +690,17 @@ func ExecuteSiftCmd (cmd string) (SearchResult, error) {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			pattern := scanner.Text()
-			global.matchPatterns = append(global.matchPatterns, pattern)
+			(*global).matchPatterns = append((*global).matchPatterns, pattern)
 
 		}
 	}
-	if len(global.matchPatterns) == 0 {
+	if len((*global).matchPatterns) == 0 {
 		if len(args) == 0 && !(options.PrintConfig || options.WriteConfig ||
 			options.TargetsOnly || options.ListTypes) {
 			errorLogger.Fatalln("No pattern given. Try 'sift --help' for more information.")
 		}
 		if len(args) > 0 && !options.TargetsOnly {
-			global.matchPatterns = append(global.matchPatterns, args[0])
+			(*global).matchPatterns = append((*global).matchPatterns, args[0])
 			args = args[1:len(args)]
 		}
 	}
@@ -734,30 +738,29 @@ func ExecuteSiftCmd (cmd string) (SearchResult, error) {
 	}
 
 	// options 使用用户配置
-	if err := options.Apply(global.matchPatterns, targets); err != nil {
+	if err := options.Apply((*global).matchPatterns, targets, global); err != nil {
 		errorLogger.Fatalf("cannot process options: %s\n", err)
 	}
 
-	global.matchRegexes = make([]*regexp.Regexp, len(global.matchPatterns))
-	for i := range global.matchPatterns {
-		global.matchRegexes[i], err = regexp.Compile(global.matchPatterns[i])
+	(*global).matchRegexes = make([]*regexp.Regexp, len((*global).matchPatterns))
+	for i := range (*global).matchPatterns {
+		(*global).matchRegexes[i], err = regexp.Compile((*global).matchPatterns[i])
 		if err != nil {
 			errorLogger.Fatalf("cannot parse pattern: %s\n", err)
 		}
 	}
 
-	_, err = executeSearch(targets)
+	_, err = executeSearch(targets, global)
 
 	if err != nil {
 		errorLogger.Println(err)
 	}
-
 	return SearchResult{
-		global.results,
-		global.totalMatchCount,
-		global.totalResultCount,
-		global.totalMatchCount,
-		global.timeCost,
+		(*global).results,
+		//(*global).totalMatchCount,
+		//(*global).totalResultCount,
+		//(*global).totalMatchCount,
+		(*global).timeCost,
 	}, nil
 }
 
@@ -768,7 +771,7 @@ func Test () {
 	searchResult, _ := ExecuteSiftCmd("-e sift . -n")
 	for _, result := range(searchResult.Results) {
 		fmt.Println("这是一个文件的搜索结果：")
-		PrintResult(result)
+		fmt.Println(result)
 	}
 	fmt.Println("运算耗时", searchResult.TimeCost)
 }

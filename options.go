@@ -175,17 +175,17 @@ func findLocalConfig() string {
 }
 
 // func listTypes list the available types (built-in and custom) and exits.
-func listTypes() {
+func listTypes(global *Global) {
 	fmt.Println("The following list shows all file types supported.")
 	fmt.Println("Use --type/--no-type to include/exclude file types.")
 	fmt.Println("")
 	var types []string
-	for t := range global.fileTypesMap {
+	for t := range (*global).fileTypesMap {
 		types = append(types, t)
 	}
 	sort.Strings(types)
 	for _, e := range types {
-		t := global.fileTypesMap[e]
+		t := (*global).fileTypesMap[e]
 		var shebang string
 		if t.ShebangRegex != nil {
 			shebang = fmt.Sprintf("or first line matches /%s/", t.ShebangRegex)
@@ -312,20 +312,20 @@ func (o *Options) LoadConfigs(noConf bool, configFileArg string) {
 }
 
 // Apply processes user provided options
-func (o *Options) Apply(patterns []string, targets []string) error {
-	if err := o.processTypes(); err != nil {
+func (o *Options) Apply(patterns []string, targets []string, global *Global) error {
+	if err := o.processTypes(global); err != nil {
 		return err
 	}
 
-	if err := o.checkFormats(); err != nil {
+	if err := o.checkFormats(global); err != nil {
 		return err
 	}
 
-	if err := o.processConditions(); err != nil {
+	if err := o.processConditions(global); err != nil {
 		return err
 	}
 
-	if err := o.checkCompatibility(patterns, targets); err != nil {
+	if err := o.checkCompatibility(patterns, targets, global); err != nil {
 		return err
 	}
 
@@ -335,10 +335,10 @@ func (o *Options) Apply(patterns []string, targets []string) error {
 		return err
 	}
 
-	o.performAutoDetections(patterns, targets)
+	o.performAutoDetections(patterns, targets, global)
 
 	if o.Quiet {
-		global.outputFile = ioutil.Discard
+		(*global).outputFile = ioutil.Discard
 	}
 
 	if o.OnlyMatching {
@@ -355,7 +355,7 @@ func (o *Options) Apply(patterns []string, targets []string) error {
 
 // processTypes processes custom types defined on the command line
 // or in the config file.
-func (o *Options) processTypes() error {
+func (o *Options) processTypes(global *Global) error {
 	for _, e := range o.DelCustomTypes {
 		if _, ok := o.CustomTypes[e]; !ok {
 			return fmt.Errorf("No custom type definition for '%s' found", e)
@@ -384,42 +384,42 @@ func (o *Options) processTypes() error {
 		}
 		patterns := strings.Split(s[0], ",")
 		ft.Patterns = patterns
-		global.fileTypesMap[name] = ft
+		(*global).fileTypesMap[name] = ft
 	}
 
 	if o.ListTypes {
-		listTypes()
+		listTypes(global)
 	}
 
 	return nil
 }
 
 // checkFormats checks options for illegal formats
-func (o *Options) checkFormats() error {
+func (o *Options) checkFormats(global *Global) error {
 	if o.ExcludePath != "" {
 		var err error
-		global.excludeFilepathRegex, err = regexp.Compile(o.ExcludePath)
+		(*global).excludeFilepathRegex, err = regexp.Compile(o.ExcludePath)
 		if err != nil {
 			return fmt.Errorf("cannot parse exclude filepath pattern '%s': %s\n", o.ExcludePath, err)
 		}
 	}
 	if o.ExcludeIPath != "" {
 		var err error
-		global.excludeFilepathRegex, err = regexp.Compile("(?i)" + o.ExcludeIPath)
+		(*global).excludeFilepathRegex, err = regexp.Compile("(?i)" + o.ExcludeIPath)
 		if err != nil {
 			return fmt.Errorf("cannot parse exclude filepath pattern '%s': %s\n", o.ExcludeIPath, err)
 		}
 	}
 	if o.IncludePath != "" {
 		var err error
-		global.includeFilepathRegex, err = regexp.Compile(o.IncludePath)
+		(*global).includeFilepathRegex, err = regexp.Compile(o.IncludePath)
 		if err != nil {
 			return fmt.Errorf("cannot parse filepath pattern '%s': %s\n", o.IncludePath, err)
 		}
 	}
 	if o.IncludeIPath != "" {
 		var err error
-		global.includeFilepathRegex, err = regexp.Compile("(?i)" + o.IncludeIPath)
+		(*global).includeFilepathRegex, err = regexp.Compile("(?i)" + o.IncludeIPath)
 		if err != nil {
 			return fmt.Errorf("cannot parse filepath pattern '%s': %s\n", o.IncludeIPath, err)
 		}
@@ -427,14 +427,14 @@ func (o *Options) checkFormats() error {
 
 	if len(o.IncludeTypes) > 0 {
 		for _, t := range strings.Split(o.IncludeTypes, ",") {
-			if _, ok := global.fileTypesMap[t]; !ok {
+			if _, ok := (*global).fileTypesMap[t]; !ok {
 				return fmt.Errorf("file type '%s' is not specified. See --list-types for a list of available file types", t)
 			}
 		}
 	}
 	if len(o.ExcludeTypes) > 0 {
 		for _, t := range strings.Split(o.ExcludeTypes, ",") {
-			if _, ok := global.fileTypesMap[t]; !ok {
+			if _, ok := (*global).fileTypesMap[t]; !ok {
 				return fmt.Errorf("file type '%s' is not specified. See --list-types for a list of available file types", t)
 			}
 		}
@@ -477,21 +477,21 @@ func (o *Options) checkFormats() error {
 	}
 
 	if o.Output != "" {
-		if global.netTcpRegex.MatchString(o.Output) {
-			netParams := global.netTcpRegex.FindStringSubmatch(o.Output)
+		if (*global).netTcpRegex.MatchString(o.Output) {
+			netParams := (*global).netTcpRegex.FindStringSubmatch(o.Output)
 			proto := netParams[1]
 			addr := netParams[2]
 			conn, err := net.Dial(proto, addr)
 			if err != nil {
 				return fmt.Errorf("could not connect to '%s'", o.Output)
 			}
-			global.outputFile = conn
+			(*global).outputFile = conn
 		} else {
 			writer, err := os.Create(o.Output)
 			if err != nil {
 				return fmt.Errorf("cannot open output file '%s' for writing", o.Output)
 			}
-			global.outputFile = writer
+			(*global).outputFile = writer
 		}
 	}
 
@@ -516,9 +516,9 @@ func (o *Options) preparePattern(pattern string) string {
 	return pattern
 }
 
-// processConditions checks conditions and puts them into global.conditions
-func (o *Options) processConditions() error {
-	global.conditions = []Condition{}
+// processConditions checks conditions and puts them into (*global).conditions
+func (o *Options) processConditions(global *Global) error {
+	(*global).conditions = []Condition{}
 	conditionDirections := []ConditionType{ConditionPreceded, ConditionFollowed, ConditionSurrounded}
 
 	// parse preceded/followed/surrounded conditions without distance limit
@@ -530,7 +530,7 @@ func (o *Options) processConditions() error {
 			if err != nil {
 				return fmt.Errorf("cannot parse condition pattern '%s': %s\n", pattern, err)
 			}
-			global.conditions = append(global.conditions, Condition{regex: regex, conditionType: conditionDirections[i%3], within: -1, negated: i >= 3})
+			(*global).conditions = append((*global).conditions, Condition{regex: regex, conditionType: conditionDirections[i%3], within: -1, negated: i >= 3})
 		}
 	}
 
@@ -554,7 +554,7 @@ func (o *Options) processConditions() error {
 			if err != nil {
 				return fmt.Errorf("cannot parse condition pattern '%s': %s", arg, err)
 			}
-			global.conditions = append(global.conditions, Condition{regex: regex, conditionType: conditionDirections[i%3], within: int64(within), negated: i >= 3})
+			(*global).conditions = append((*global).conditions, Condition{regex: regex, conditionType: conditionDirections[i%3], within: int64(within), negated: i >= 3})
 		}
 	}
 
@@ -566,7 +566,7 @@ func (o *Options) processConditions() error {
 			if err != nil {
 				return fmt.Errorf("cannot parse condition pattern '%s': %s\n", pattern, err)
 			}
-			global.conditions = append(global.conditions, Condition{regex: regex, conditionType: ConditionFileMatches, negated: i == 1})
+			(*global).conditions = append((*global).conditions, Condition{regex: regex, conditionType: ConditionFileMatches, negated: i == 1})
 		}
 	}
 
@@ -589,7 +589,7 @@ func (o *Options) processConditions() error {
 			if err != nil {
 				return fmt.Errorf("cannot parse condition pattern '%s': %s\n", s[1], err)
 			}
-			global.conditions = append(global.conditions, Condition{regex: regex, conditionType: ConditionLineMatches, lineRangeStart: int64(lineno), negated: i == 1})
+			(*global).conditions = append((*global).conditions, Condition{regex: regex, conditionType: ConditionLineMatches, lineRangeStart: int64(lineno), negated: i == 1})
 		}
 	}
 
@@ -616,7 +616,7 @@ func (o *Options) processConditions() error {
 			if err != nil {
 				return fmt.Errorf("cannot parse condition pattern '%s': %s\n", s[2], err)
 			}
-			global.conditions = append(global.conditions, Condition{regex: regex, conditionType: ConditionRangeMatches, lineRangeStart: int64(lineStart), lineRangeEnd: int64(lineEnd), negated: i == 1})
+			(*global).conditions = append((*global).conditions, Condition{regex: regex, conditionType: ConditionRangeMatches, lineRangeStart: int64(lineStart), lineRangeEnd: int64(lineEnd), negated: i == 1})
 		}
 	}
 
@@ -624,14 +624,14 @@ func (o *Options) processConditions() error {
 }
 
 // checkCompatibility checks options for incompatible combinations
-func (o *Options) checkCompatibility(patterns []string, targets []string) error {
+func (o *Options) checkCompatibility(patterns []string, targets []string, global *Global) error {
 	stdinTargetFound := false
 	netTargetFound := false
 	for _, target := range targets {
 		switch {
 		case target == "-":
 			stdinTargetFound = true
-		case global.netTcpRegex.MatchString(target):
+		case (*global).netTcpRegex.MatchString(target):
 			netTargetFound = true
 		}
 	}
@@ -686,7 +686,7 @@ func (o *Options) checkCompatibility(patterns []string, targets []string) error 
 		return errors.New("options 'only-matching' and 'replace' cannot be used together")
 	}
 
-	if o.SmartCase && (len(patterns) > 1 || len(global.conditions) > 0) {
+	if o.SmartCase && (len(patterns) > 1 || len((*global).conditions) > 0) {
 		return errors.New("the smart case option cannot be used with multiple patterns or conditions")
 	}
 
@@ -752,29 +752,29 @@ func (o *Options) processConfigOptions() error {
 }
 
 // performAutoDetections sets options that are set to "auto"
-func (o *Options) performAutoDetections(patterns []string, targets []string) {
+func (o *Options) performAutoDetections(patterns []string, targets []string, global *Global) {
 	stdinTargetFound := false
 	netTargetFound := false
 	for _, target := range targets {
 		switch {
 		case target == "-":
 			stdinTargetFound = true
-		case global.netTcpRegex.MatchString(target):
+		case (*global).netTcpRegex.MatchString(target):
 			netTargetFound = true
 		}
 	}
 
-	if len(global.conditions) == 0 {
-		global.streamingAllowed = true
+	if len((*global).conditions) == 0 {
+		(*global).streamingAllowed = true
 
 		if len(targets) == 1 {
 			if stdinTargetFound || netTargetFound {
-				global.streamingThreshold = 0
+				(*global).streamingThreshold = 0
 				o.GroupByFile = false
 			} else {
 				stat, err := os.Stat(targets[0])
 				if err == nil && stat.Mode()&os.ModeType == 0 {
-					global.streamingThreshold = 0
+					(*global).streamingThreshold = 0
 				}
 			}
 		}
@@ -825,14 +825,14 @@ func (o *Options) performAutoDetections(patterns []string, targets []string) {
 	}
 
 	if o.Color == "on" {
-		global.termHighlightFilename = fmt.Sprintf("\033[%d;%d;%dm", 1, 35, 49)
-		global.termHighlightLineno = fmt.Sprintf("\033[%d;%d;%dm", 1, 32, 49)
-		global.termHighlightMatch = fmt.Sprintf("\033[%d;%d;%dm", 1, 31, 49)
-		global.termHighlightReset = fmt.Sprintf("\033[%d;%d;%dm", 0, 39, 49)
+		(*global).termHighlightFilename = fmt.Sprintf("\033[%d;%d;%dm", 1, 35, 49)
+		(*global).termHighlightLineno = fmt.Sprintf("\033[%d;%d;%dm", 1, 32, 49)
+		(*global).termHighlightMatch = fmt.Sprintf("\033[%d;%d;%dm", 1, 31, 49)
+		(*global).termHighlightReset = fmt.Sprintf("\033[%d;%d;%dm", 0, 39, 49)
 	} else {
-		global.termHighlightFilename = ""
-		global.termHighlightLineno = ""
-		global.termHighlightMatch = ""
-		global.termHighlightReset = ""
+		(*global).termHighlightFilename = ""
+		(*global).termHighlightLineno = ""
+		(*global).termHighlightMatch = ""
+		(*global).termHighlightReset = ""
 	}
 }
