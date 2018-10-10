@@ -413,13 +413,15 @@ func processFileTargets(global *Global) {
 		matchRegexes[i] = regexp.MustCompile((*global).matchPatterns[i])
 	}
 
-
 	for {
 		select {
 			case <- (*global).stopChan:
 				return
 			default:
 				filePath := <-(*global).filesChan
+				if filePath == "" {
+					return
+				}
 				var err error
 				var infile *os.File
 				var reader io.Reader
