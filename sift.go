@@ -416,12 +416,10 @@ func processFileTargets(global *Global) {
 
 	for {
 		select {
-			//
 			case <- (*global).stopChan:
-			  	fmt.Println("stopChan ->")
 				return
-			case filePath := <-(*global).filesChan:
-				fmt.Println(filePath, 1)
+			default:
+				filePath := <-(*global).filesChan
 				var err error
 				var infile *os.File
 				var reader io.Reader
@@ -483,76 +481,8 @@ func processFileTargets(global *Global) {
 				  }
 				}
 				infile.Close()
-				fmt.Println(filePath, 2)
 		}
 	}
-
-
-	//for filePath := range (*global).filesChan {
-	//	fmt.Println(filePath, 1)
-	//	var err error
-	//	var infile *os.File
-	//	var reader io.Reader
-	//
-	//	if options.TargetsOnly {
-	//		(*global).resultsChan <- &Result{Target: filePath}
-	//		continue
-	//	}
-	//
-	//	// 读取文件为infile
-	//	if filePath == "-" {
-	//		infile = os.Stdin
-	//	} else {
-	//
-	//		infile, err = os.Open(filePath)
-	//		if err != nil {
-	//			errorLogger.Printf("cannot open file '%s': %s\n", filePath, err)
-	//			continue
-	//		}
-	//	}
-	//
-	//	if options.Zip && strings.HasSuffix(filePath, ".gz") {
-	//		rawReader := infile
-	//		reader, err = gzip.NewReader(rawReader)
-	//		if err != nil {
-	//			errorLogger.Printf("error decompressing file '%s', opening as normal file\n", infile.Name())
-	//			infile.Seek(0, 0)
-	//			reader = infile
-	//		}
-	//	} else if infile == os.Stdin && options.Multiline {
-	//		reader = nbreader.NewNBReader(infile, InputBlockSize,
-	//			nbreader.ChunkTimeout(MultilinePipeChunkTimeout), nbreader.Timeout(MultilinePipeTimeout))
-	//	} else {
-	//		// 正常进入这个分支
-	//		reader = infile
-	//	}
-	//
-	//	if options.InvertMatch {
-	//		err = processReaderInvertMatch(reader, matchRegexes, filePath, global)
-	//	} else {
-	//		// 正常进入这个分支
-	//		// reader 文件reader io.Reader
-	//		// matchRegexes 正则s
-	//		// dataBuffer 结果buffer
-	//		// testBuffer 结果buffer
-	//		// testBuffer 结果buffer
-	//		// filePath 文件路径
-	//		err = processReader(reader, matchRegexes, dataBuffer, testBuffer, filePath, global)
-	//	}
-	//	if err != nil {
-	//		if err == errLineTooLong {
-	//			(*global).totalLineLengthErrors += 1
-	//			if options.ErrShowLineLength {
-	//				errmsg := fmt.Sprintf("file contains very long lines (>= %d bytes). See options --blocksize and --err-skip-line-length.", InputBlockSize)
-	//				errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, errmsg)
-	//			}
-	//		} else {
-	//			errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, err)
-	//		}
-	//	}
-	//	infile.Close()
-	//	fmt.Println(filePath, 2)
-	//}
 }
 
 // processNetworkTarget starts a listening TCP socket and calls processReader

@@ -22,12 +22,10 @@ import (
 	"os"
 	"regexp"
 	"sort"
-	"fmt"
 )
 
 // processReader is the main routine working on an io.Reader
 func processReader(reader io.Reader, matchRegexes []*regexp.Regexp, data []byte, testBuffer []byte, target string, global *Global) error {
-	fmt.Println("target", target)
 	var (
 		bufferOffset             int
 		err                      error
