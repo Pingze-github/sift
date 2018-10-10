@@ -140,6 +140,7 @@ type Global struct {
 	resultsChan           chan *Result
 	results				  [] *Result
 	resultsDoneChan       chan struct{}
+	stopChan			  chan int64
 	targetsWaitGroup      sync.WaitGroup
 	recurseWaitGroup      sync.WaitGroup
 	streamingAllowed      bool
@@ -164,9 +165,6 @@ type Global struct {
 // 返回数据
 type SearchResult struct {
 	Results 	[] *Result
-	//MatchCount	int64
-	//ResultCount	int64
-	//TargetCount	int64
 	TimeCost	time.Duration
 }
 
@@ -402,6 +400,7 @@ func checkShebang(regex *regexp.Regexp, filepath string) (bool, error) {
 
 // processFileTargets reads filesChan, builds an io.Reader for the target and calls processReader
 // 关键 文件搜索
+// 每个线程执行一次
 func processFileTargets(global *Global) {
 
 	// 控制等待组完成
@@ -414,70 +413,146 @@ func processFileTargets(global *Global) {
 		matchRegexes[i] = regexp.MustCompile((*global).matchPatterns[i])
 	}
 
-	// 从filesChan中取出filepath
-	for filePath := range (*global).filesChan {
-		var err error
-		var infile *os.File
-		var reader io.Reader
 
-		if options.TargetsOnly {
-			(*global).resultsChan <- &Result{Target: filePath}
-			continue
-		}
+	for {
+		select {
+			//
+			case <- (*global).stopChan:
+			  	fmt.Println("stopChan ->")
+				return
+			case filePath := <-(*global).filesChan:
+				fmt.Println(filePath, 1)
+				var err error
+				var infile *os.File
+				var reader io.Reader
 
-		// 读取文件为infile
-		if filePath == "-" {
-			infile = os.Stdin
-		} else {
-
-			infile, err = os.Open(filePath)
-			if err != nil {
-				errorLogger.Printf("cannot open file '%s': %s\n", filePath, err)
-				continue
-			}
-		}
-
-		if options.Zip && strings.HasSuffix(filePath, ".gz") {
-			rawReader := infile
-			reader, err = gzip.NewReader(rawReader)
-			if err != nil {
-				errorLogger.Printf("error decompressing file '%s', opening as normal file\n", infile.Name())
-				infile.Seek(0, 0)
-				reader = infile
-			}
-		} else if infile == os.Stdin && options.Multiline {
-			reader = nbreader.NewNBReader(infile, InputBlockSize,
-				nbreader.ChunkTimeout(MultilinePipeChunkTimeout), nbreader.Timeout(MultilinePipeTimeout))
-		} else {
-			// 正常进入这个分支
-			reader = infile
-		}
-
-		if options.InvertMatch {
-			err = processReaderInvertMatch(reader, matchRegexes, filePath, global)
-		} else {
-			// 正常进入这个分支
-			// reader 文件reader io.Reader
-			// matchRegexes 正则s
-			// dataBuffer 结果buffer
-			// testBuffer 结果buffer
-			// testBuffer 结果buffer
-			// filePath 文件路径
-			err = processReader(reader, matchRegexes, dataBuffer, testBuffer, filePath, global)
-		}
-		if err != nil {
-			if err == errLineTooLong {
-				(*global).totalLineLengthErrors += 1
-				if options.ErrShowLineLength {
-					errmsg := fmt.Sprintf("file contains very long lines (>= %d bytes). See options --blocksize and --err-skip-line-length.", InputBlockSize)
-					errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, errmsg)
+				if options.TargetsOnly {
+				  (*global).resultsChan <- &Result{Target: filePath}
+				  continue
 				}
-			} else {
-				errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, err)
-			}
+
+				// 读取文件为infile
+				if filePath == "-" {
+				  infile = os.Stdin
+				} else {
+
+				  infile, err = os.Open(filePath)
+				  if err != nil {
+					  errorLogger.Printf("cannot open file '%s': %s\n", filePath, err)
+					  continue
+				  }
+				}
+
+				if options.Zip && strings.HasSuffix(filePath, ".gz") {
+				  rawReader := infile
+				  reader, err = gzip.NewReader(rawReader)
+				  if err != nil {
+					  errorLogger.Printf("error decompressing file '%s', opening as normal file\n", infile.Name())
+					  infile.Seek(0, 0)
+					  reader = infile
+				  }
+				} else if infile == os.Stdin && options.Multiline {
+				  reader = nbreader.NewNBReader(infile, InputBlockSize,
+					  nbreader.ChunkTimeout(MultilinePipeChunkTimeout), nbreader.Timeout(MultilinePipeTimeout))
+				} else {
+				  // 正常进入这个分支
+				  reader = infile
+				}
+
+				if options.InvertMatch {
+				  err = processReaderInvertMatch(reader, matchRegexes, filePath, global)
+				} else {
+				  // 正常进入这个分支
+				  // reader 文件reader io.Reader
+				  // matchRegexes 正则s
+				  // dataBuffer 结果buffer
+				  // testBuffer 结果buffer
+				  // testBuffer 结果buffer
+				  // filePath 文件路径
+				  err = processReader(reader, matchRegexes, dataBuffer, testBuffer, filePath, global)
+				}
+				if err != nil {
+				  if err == errLineTooLong {
+					  (*global).totalLineLengthErrors += 1
+					  if options.ErrShowLineLength {
+						  errmsg := fmt.Sprintf("file contains very long lines (>= %d bytes). See options --blocksize and --err-skip-line-length.", InputBlockSize)
+						  errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, errmsg)
+					  }
+				  } else {
+					  errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, err)
+				  }
+				}
+				infile.Close()
+				fmt.Println(filePath, 2)
 		}
-		infile.Close()
 	}
+
+
+	//for filePath := range (*global).filesChan {
+	//	fmt.Println(filePath, 1)
+	//	var err error
+	//	var infile *os.File
+	//	var reader io.Reader
+	//
+	//	if options.TargetsOnly {
+	//		(*global).resultsChan <- &Result{Target: filePath}
+	//		continue
+	//	}
+	//
+	//	// 读取文件为infile
+	//	if filePath == "-" {
+	//		infile = os.Stdin
+	//	} else {
+	//
+	//		infile, err = os.Open(filePath)
+	//		if err != nil {
+	//			errorLogger.Printf("cannot open file '%s': %s\n", filePath, err)
+	//			continue
+	//		}
+	//	}
+	//
+	//	if options.Zip && strings.HasSuffix(filePath, ".gz") {
+	//		rawReader := infile
+	//		reader, err = gzip.NewReader(rawReader)
+	//		if err != nil {
+	//			errorLogger.Printf("error decompressing file '%s', opening as normal file\n", infile.Name())
+	//			infile.Seek(0, 0)
+	//			reader = infile
+	//		}
+	//	} else if infile == os.Stdin && options.Multiline {
+	//		reader = nbreader.NewNBReader(infile, InputBlockSize,
+	//			nbreader.ChunkTimeout(MultilinePipeChunkTimeout), nbreader.Timeout(MultilinePipeTimeout))
+	//	} else {
+	//		// 正常进入这个分支
+	//		reader = infile
+	//	}
+	//
+	//	if options.InvertMatch {
+	//		err = processReaderInvertMatch(reader, matchRegexes, filePath, global)
+	//	} else {
+	//		// 正常进入这个分支
+	//		// reader 文件reader io.Reader
+	//		// matchRegexes 正则s
+	//		// dataBuffer 结果buffer
+	//		// testBuffer 结果buffer
+	//		// testBuffer 结果buffer
+	//		// filePath 文件路径
+	//		err = processReader(reader, matchRegexes, dataBuffer, testBuffer, filePath, global)
+	//	}
+	//	if err != nil {
+	//		if err == errLineTooLong {
+	//			(*global).totalLineLengthErrors += 1
+	//			if options.ErrShowLineLength {
+	//				errmsg := fmt.Sprintf("file contains very long lines (>= %d bytes). See options --blocksize and --err-skip-line-length.", InputBlockSize)
+	//				errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, errmsg)
+	//			}
+	//		} else {
+	//			errorLogger.Printf("cannot process data from file '%s': %s\n", filePath, err)
+	//		}
+	//	}
+	//	infile.Close()
+	//	fmt.Println(filePath, 2)
+	//}
 }
 
 // processNetworkTarget starts a listening TCP socket and calls processReader
@@ -624,13 +699,15 @@ func executeSearch(targets []string, global *Global) (ret int, err error) {
 
 
 // 执行sift命令。可以传入sift执行命令（参数部分），来执行操作并返回结果
-func ExecuteSiftCmd (cmd string) (SearchResult, error) {
+// TODO 超时控制 超时后，将通道close
+func ExecuteSiftCmd (cmd string, timeout time.Duration) (SearchResult, error) {
 
 	// 重新初始化
 	global := &Global{
 		outputFile:         os.Stdout,
 		netTcpRegex:        regexp.MustCompile(`^(tcp[46]?)://(.*:\d+)$`),
 		streamingThreshold: 1 << 16,
+		stopChan: make(chan int64),
 	}
 
 	initFileTypes(global)
@@ -750,25 +827,37 @@ func ExecuteSiftCmd (cmd string) (SearchResult, error) {
 		}
 	}
 
-	_, err = executeSearch(targets, global)
+	execChan := make(chan error)
 
-	if err != nil {
-		errorLogger.Println(err)
+	go func() {
+		_, err := executeSearch(targets, global)
+		execChan <- err
+	}()
+
+	select {
+	case err := <-execChan:
+		if err != nil {
+			errorLogger.Println(err)
+		}
+		return SearchResult{
+			Results:(*global).results,
+			TimeCost:(*global).timeCost,
+		}, nil
+
+	case <-time.After(timeout):
+		// 超时
+		for i := 0; i < options.Cores; i++ {
+			(*global).stopChan <- 1
+		}
+		return SearchResult{}, errors.New(fmt.Sprintf("sift search timeout for %s limit", timeout))
 	}
-	return SearchResult{
-		(*global).results,
-		//(*global).totalMatchCount,
-		//(*global).totalResultCount,
-		//(*global).totalMatchCount,
-		(*global).timeCost,
-	}, nil
 }
 
 // 为了使匹配结果可以在包外获取，需对结果集进行转换
 
 // 测试方法
 func Test () {
-	searchResult, _ := ExecuteSiftCmd("-e sift . -n")
+	searchResult, _ := ExecuteSiftCmd("-e sift . -n", time.Duration(1e9))
 	for _, result := range(searchResult.Results) {
 		fmt.Println("这是一个文件的搜索结果：")
 		fmt.Println(result)

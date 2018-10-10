@@ -2,11 +2,23 @@
 
 A fast and powerful open source alternative to grep.
 
-## 说明
+## 更改说明
 
 这是对sift工具的一个修改，使之可以作为类库被其他程序调用。
-
 通过输入sift命令参数，可以返回搜索结果。
+
+## 主要更改内容
+
++ 设计函数，支持输入命令参数，返回搜索结果。
++ 将部分结构体，更改为可导出。
++ 将global全局变量，更改为局部变量，以允许同时执行多个过程。
++ 支持超时控制。超时时停止搜索
+
+## 主要函数
+
+```
+func ExecuteSiftCmd (cmd string, timeout time.Duration) (SearchResult, error)
+```
 
 ## Features
 
